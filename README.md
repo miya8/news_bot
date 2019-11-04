@@ -1,2 +1,7 @@
-# news_bot
-news bot app repository
+# 何のプログラム?
+news bot app
+
+# 何するの?
+1. TVニュースの話題を取得
+2. TVニュースの最頻出の話題の記事をニュースサイトで取得する
+3. ニュースサイトの記事名とURLをbotする
