@@ -11,7 +11,13 @@ TARGET_FILE_BASE_NAME = '{}_news_{}.csv'
 TARGET_DAYS = 1
 
 # テレビ局毎の話題区切り文字
-KYOKU_SPLIT_KIGOU_DICT = {'tbs': ['▽', '▼']}
+KYOKU_SEP_DICT = {
+    'tbs': '▽|▼',
+    'nhk': '▽|▼|　【',
+    'ntv': '▽|▼|※',
+    'fuji': '▽|▼',
+    'asahi': r'▽|▼|」1|　\d+'
+}
 
 # 抽出する品詞
 KEEP_FILTER = ['名詞', '動詞', '形容詞']

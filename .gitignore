@@ -1,4 +1,5 @@
 *.csv
+*.html
 test*
 __*__/
 __*__.py
@@ -6,3 +7,4 @@ __*__.py
 .vscode/
 /news/news/*py
 !/news/news/spiders/
+!/news/middlewares_selenium.py

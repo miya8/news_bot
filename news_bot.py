@@ -17,7 +17,7 @@ from janome.charfilter import (RegexReplaceCharFilter,
 from janome.tokenfilter import LowerCaseFilter, POSKeepFilter
 
 import linebot
-from settings import *
+from settings_newsbot import *
 
 logger = getLogger(LOGGER_NAME)
 handler = StreamHandler()
@@ -69,8 +69,7 @@ def get_words_list_per_title(kyoku, min_date_str, stop_words):
             lines = list(lines_set)
             # 1行に複数のタイトルが含まれる。局ごとに異なる区切り文字で分割する。
             for line in lines:
-                seiki_hyogen = '|'.join(KYOKU_SPLIT_KIGOU_DICT[kyoku])
-                titles = re.split(seiki_hyogen, line)
+                titles = re.split(KYOKU_SEP_DICT[kyoku], line)
                 # タイトル毎に下処理済みの単語リストを取得
                 for title in titles:
                     word_list_per_title = get_words(title, stop_words)
@@ -85,8 +84,8 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM):
 
     dic = Dictionary(title_list)
     bow = [dic.doc2bow(title) for title in title_list]
-    model = LdaModel(bow, id2word=dic, num_topics=30)
-
+    # TODO: 適切なトピック数を取得して設定する
+    model = LdaModel(bow, id2word=dic, num_topics=5)
     # 各タイトルを分類
     topic_id_dict = {}
     for title_id, title in zip(dic.id2token.keys(), title_list):
@@ -135,7 +134,7 @@ def main():
     stop_words = requests.get(url).text.split('\r\n')
     # ニュース欄のタイトル毎の単語リスト取得
     words_list = []
-    for kyoku in KYOKU_SPLIT_KIGOU_DICT.keys():
+    for kyoku in KYOKU_SEP_DICT.keys():
         words_list += get_words_list_per_title(kyoku, min_date, stop_words)
     # 最頻出の話題の重要な単語を取得
     common_topic_word_list = get_most_common(words_list)
