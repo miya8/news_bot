@@ -15,9 +15,11 @@ from janome.analyzer import Analyzer
 from janome.charfilter import (RegexReplaceCharFilter,
                                UnicodeNormalizeCharFilter)
 from janome.tokenfilter import LowerCaseFilter, POSKeepFilter
+import pandas as pd
 
 import linebot
 from settings_newsbot import *
+
 
 logger = getLogger(LOGGER_NAME)
 handler = StreamHandler()
@@ -96,6 +98,15 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM):
         logger.debug(title)
         logger.debug(model.get_document_topics(dic.doc2bow(title)))
         logger.debug('topic_id_dict[index]: ' + str(topic_id_dict[title_id]))
+    if LOG_LEVEL == 'DEBUG':
+        pd.DataFrame({
+            'title_id':list(topic_id_dict.keys()),
+            'title': title_list,
+            'topic_id': list(topic_id_dict.values())
+        }).to_csv(os.path.join('test', 'classified_topic_{}.csv' \
+                .format(datetime.today().strftime(format='%Y%m%d'))),
+                index=False,
+                encoding='cp932')
     # 最頻出の話題を取得
     topic_id_counter = Counter(topic_id_dict.values())
     most_common_topic_id = topic_id_counter.most_common(1)[0][0]
@@ -141,7 +152,7 @@ def main():
     # 該当する単語でgoogleニュースを検索
     title_url_list = scrape_googlenews(common_topic_word_list)
     # Linebotする
-    linebot.bot_to_line(title_url_list)
+    #linebot.bot_to_line(title_url_list)
 
 
 if __name__ == '__main__':

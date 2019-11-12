@@ -20,8 +20,8 @@ TARGET_URL_FORMAT = 'https://www.fujitv.co.jp/timetable/daily/index.html?day={}'
 TARGET_DAYS = 0
 
 TARGET_BANGUMI_DICT = {
-    'めざましテレビ': {'rm_word': ['今知りたい情報']},
-    'めざましどようび': {'rm_word': ['お出かけ前の今、知りたい！']},
+    'めざましテレビ': {'rm_word': ['今知りたい情報', 'めざましテレビ']},
+    'めざましどようび': {'rm_word': ['お出かけ前の今、知りたい！', 'めざましテレビ']},
     'FNN Live News days': {'rm_word': ['「ライブニュース デイズ」', '「Live News days」']},
     'FNN Live News it！': {'rm_word': ['ニュース・スポーツを一挙紹介', '最新情報からエンタメ']},
     'FNN Live News α': {'rm_word': ['その日あったことを短時間']},
