@@ -152,7 +152,7 @@ def main():
     # 該当する単語でgoogleニュースを検索
     title_url_list = scrape_googlenews(common_topic_word_list)
     # Linebotする
-    #linebot.bot_to_line(title_url_list)
+    linebot.bot_to_line(title_url_list)
 
 
 if __name__ == '__main__':
