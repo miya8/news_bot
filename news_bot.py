@@ -1,5 +1,6 @@
 import glob
 import os
+import sys
 import re
 import urllib
 from collections import Counter
@@ -28,8 +29,8 @@ logger.setLevel(LOG_LEVEL)
 logger.addHandler(handler)
 
 
-def get_words(text, stop_words):
-    '''textを形態素解析し、下処理を適用した単語リストを作成する'''
+def get_words(titles, stop_words):
+    '''titlesを形態素解析し、下処理を適用した単語リストを作成する'''
 
     char_filters = [UnicodeNormalizeCharFilter(),
                     RegexReplaceCharFilter(r'text|[ -/:-@\[-~]', '')]
@@ -42,23 +43,28 @@ def get_words(text, stop_words):
         token_filters=token_filters
     )
 
-    word_list = []
-    for word in analyzer.analyze(text):
-        if word.base_form in stop_words:
-            continue
-        hinshi_split = word.part_of_speech.split(',')
-        hinshi_taple = (hinshi_split[0], hinshi_split[1])
-        if hinshi_taple in WEIGHTS_HINSHI_DICT.keys():
-            word_list += [word.base_form] * WEIGHTS_HINSHI_DICT[hinshi_taple]
-        else:
-            word_list.append(word.base_form)
-    return word_list
+    title_list = []
+    for title in titles:
+        word_list_per_title = []
+        for word in analyzer.analyze(title):
+            # ストップワードを削除
+            if word.base_form in stop_words:
+                continue
+            hinshi_split = word.part_of_speech.split(',')
+            hinshi_taple = (hinshi_split[0], hinshi_split[1])
+            if hinshi_taple in WEIGHTS_HINSHI_DICT.keys():
+                word_list_per_title += [word.base_form] * WEIGHTS_HINSHI_DICT[hinshi_taple]
+            else:
+                word_list_per_title.append(word.base_form)
+        if len(word_list_per_title) > 0:
+            title_list.append(word_list_per_title)
+    return title_list
 
 
-def get_words_list_per_title(kyoku, min_date_str, stop_words):
-    '''ニュース内容のファイルから、タイトル毎に単語のリストを取得する'''
+def get_words_list_per_title(kyoku, min_date_str):
+    '''ニュース内容のファイルから、タイトルのリストを取得する'''
 
-    words_list = []
+    title_list = []
     # ニュース内容のファイル（局ごと）を取得
     file_name = TARGET_FILE_BASE_NAME.format(kyoku, '*')
     #file_name = TARGET_FILE_BASE_NAME.format(kyoku, '20191112')
@@ -77,22 +83,19 @@ def get_words_list_per_title(kyoku, min_date_str, stop_words):
             lines = list(lines_set)
             # 1行に複数のタイトルが含まれる。局ごとに異なる区切り文字で分割する。
             for line in lines:
-                titles = re.split(KYOKU_SEP_DICT[kyoku], line)
-                # タイトル毎に下処理済みの単語リストを取得
-                for title in titles:
-                    word_list_per_title = get_words(title, stop_words)
-                    if len(word_list_per_title) > 0:
-                        words_list.append(word_list_per_title)
-    return words_list
+                title_list = title_list + re.split(KYOKU_SEP_DICT[kyoku], line)
+    return title_list
 
 
-def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM):
+def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
     '''最頻出の話題の単語num個のセットを取得する'''
 
     dic = Dictionary(title_list)
     bow = [dic.doc2bow(title) for title in title_list]
     # TODO: 適切なトピック数を取得して設定する
-    model = LdaModel(bow, id2word=dic, num_topics=5)
+    if LOG_LEVEL == 'DEBUG':
+        random_state = 123
+    model = LdaModel(bow, id2word=dic, num_topics=5, random_state=random_state)
     # 各タイトルを分類
     topic_id_list = []
     for idx, title in enumerate(title_list):
@@ -122,11 +125,7 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM):
             encoding='cp932'
         )
     # 最頻出の話題を取得
-    print('topic_id_list')
-    print(topic_id_list)
     topic_id_counter = Counter(topic_id_list)
-    print('topic_id_counter')
-    print(topic_id_counter)
     most_common_topic_id = topic_id_counter.most_common(1)[0][0]
     topic_terms = model.get_topic_terms(most_common_topic_id)
     logger.debug('')
@@ -161,12 +160,17 @@ def main():
     # SlothLibのストップワードを取得
     url = 'http://svn.sourceforge.jp/svnroot/slothlib/CSharp/Version1/SlothLib/NLP/Filter/StopWord/word/Japanese.txt'
     stop_words = requests.get(url).text.split('\r\n')
-    # ニュース欄のタイトル毎の単語リスト取得
-    words_list = []
+    # ニュース欄のタイトルを取得
+    title_sentence_list = []
     for kyoku in KYOKU_SEP_DICT.keys():
-        words_list += get_words_list_per_title(kyoku, min_date, stop_words)
+        title_sentence_list += get_words_list_per_title(kyoku, min_date)
+    # タイトルごとの単語リスト取得
+    title_list = get_words(title_sentence_list, stop_words)
+    if len(title_list) < 0:
+        logger.warn('Interrupt news_bot_main.: No TV title data in target periods.')
+        sys.exit(-1)
     # 最頻出の話題の重要な単語を取得
-    common_topic_word_list = get_most_common(words_list)
+    common_topic_word_list = get_most_common(title_list)
     # 該当する単語でgoogleニュースを検索
     title_url_list = scrape_googlenews(common_topic_word_list)
     # Linebotする
