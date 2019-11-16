@@ -11,11 +11,12 @@ import feedparser
 import requests
 from gensim.corpora import Dictionary
 from gensim.models.ldamodel import LdaModel
-from janome.analyzer import Analyzer
+from janome.analyzer import Analyzer, Tokenizer
 from janome.charfilter import (RegexReplaceCharFilter,
                                UnicodeNormalizeCharFilter)
 from janome.tokenfilter import LowerCaseFilter, POSKeepFilter
 import pandas as pd
+import numpy as np
 
 import linebot
 from settings_newsbot import *
@@ -33,9 +34,13 @@ def get_words(text, stop_words):
     char_filters = [UnicodeNormalizeCharFilter(),
                     RegexReplaceCharFilter(r'text|[ -/:-@\[-~]', '')]
     token_filters = [POSKeepFilter(KEEP_FILTER),
-                     # CompoundNounFilter(),
                      LowerCaseFilter()]
-    analyzer = Analyzer(char_filters=char_filters, token_filters=token_filters)
+    tokenizer = Tokenizer(mmap=True)
+    analyzer = Analyzer(
+        tokenizer=tokenizer,
+        char_filters=char_filters,
+        token_filters=token_filters
+    )
 
     word_list = []
     for word in analyzer.analyze(text):
@@ -56,6 +61,7 @@ def get_words_list_per_title(kyoku, min_date_str, stop_words):
     words_list = []
     # ニュース内容のファイル（局ごと）を取得
     file_name = TARGET_FILE_BASE_NAME.format(kyoku, '*')
+    #file_name = TARGET_FILE_BASE_NAME.format(kyoku, '20191112')
     file_path_list = glob.glob(TARGET_DIR + os.sep + file_name)
     for file_path in file_path_list:
         if int(file_path.split('.')[-2][-8:]) < int(min_date_str):
@@ -75,7 +81,6 @@ def get_words_list_per_title(kyoku, min_date_str, stop_words):
                 # タイトル毎に下処理済みの単語リストを取得
                 for title in titles:
                     word_list_per_title = get_words(title, stop_words)
-                    # TODO: 接頭辞＋名詞は1語、「W」「杯」は1語、など適切な単位になるよう処理追加
                     if len(word_list_per_title) > 0:
                         words_list.append(word_list_per_title)
     return words_list
@@ -89,26 +94,39 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM):
     # TODO: 適切なトピック数を取得して設定する
     model = LdaModel(bow, id2word=dic, num_topics=5)
     # 各タイトルを分類
-    topic_id_dict = {}
-    for title_id, title in zip(dic.id2token.keys(), title_list):
-        topic_id = sorted(model.get_document_topics(dic.doc2bow(title)),
-                          key=lambda x: x[1],
-                          reverse=True)[0][0]
-        topic_id_dict[title_id] = topic_id
+    topic_id_list = []
+    for idx, title in enumerate(title_list):
+        logger.debug('title')
         logger.debug(title)
-        logger.debug(model.get_document_topics(dic.doc2bow(title)))
-        logger.debug('topic_id_dict[index]: ' + str(topic_id_dict[title_id]))
+        doc_topics_tuple = model.get_document_topics(dic.doc2bow(title), minimum_probability=0.0)
+        doc_topic_dist = [[val[0], val[1]] for val in doc_topics_tuple]
+        doc_topic_dist = np.array(doc_topic_dist)
+        if idx == 0:
+            topic_dist_arr = doc_topic_dist
+        else:
+            topic_dist_arr = np.vstack([topic_dist_arr, doc_topic_dist])
+        topic_id = int(sorted(doc_topic_dist, key=lambda x: x[1], reverse=True)[0][0])
+        topic_id_list.append(topic_id)
     if LOG_LEVEL == 'DEBUG':
-        pd.DataFrame({
-            'title_id':list(topic_id_dict.keys()),
+        df_dist = pd.DataFrame({
             'title': title_list,
-            'topic_id': list(topic_id_dict.values())
-        }).to_csv(os.path.join('test', 'classified_topic_{}.csv' \
+            'topic_id' :topic_id_list
+        })
+        arr_dist = topic_dist_arr.reshape(-1, model.get_topics().shape[0], 2)
+        for topic_id in range(model.get_topics().shape[0]):
+            df_dist['topic_{}'.format(topic_id)] = arr_dist[:, topic_id, 1]
+        df_dist.to_csv(
+            os.path.join('test', 'classified_topic_{}.csv' \
                 .format(datetime.today().strftime(format='%Y%m%d'))),
-                index=False,
-                encoding='cp932')
+            index=False,
+            encoding='cp932'
+        )
     # 最頻出の話題を取得
-    topic_id_counter = Counter(topic_id_dict.values())
+    print('topic_id_list')
+    print(topic_id_list)
+    topic_id_counter = Counter(topic_id_list)
+    print('topic_id_counter')
+    print(topic_id_counter)
     most_common_topic_id = topic_id_counter.most_common(1)[0][0]
     topic_terms = model.get_topic_terms(most_common_topic_id)
     logger.debug('')
