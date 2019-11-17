@@ -13,9 +13,8 @@ import requests
 from gensim.corpora import Dictionary
 from gensim.models.ldamodel import LdaModel
 from janome.analyzer import Analyzer, Tokenizer
-from janome.charfilter import (RegexReplaceCharFilter,
-                               UnicodeNormalizeCharFilter)
-from janome.tokenfilter import LowerCaseFilter, POSKeepFilter
+from janome.charfilter import RegexReplaceCharFilter, UnicodeNormalizeCharFilter
+from janome.tokenfilter import LowerCaseFilter, POSKeepFilter, POSStopFilter
 import pandas as pd
 import numpy as np
 
@@ -35,6 +34,7 @@ def get_words(titles, stop_words):
     char_filters = [UnicodeNormalizeCharFilter(),
                     RegexReplaceCharFilter(r'text|[ -/:-@\[-~]', '')]
     token_filters = [POSKeepFilter(KEEP_FILTER),
+                     POSStopFilter(STOP_FILTER),
                      LowerCaseFilter()]
     tokenizer = Tokenizer(mmap=True)
     analyzer = Analyzer(
@@ -47,7 +47,11 @@ def get_words(titles, stop_words):
     for title in titles:
         word_list_per_title = []
         for word in analyzer.analyze(title):
-            # ストップワードを削除
+            # アルファベット、平仮名、カタカナ1文字の単語を除外
+            if (len(word.surface) == 1) \
+                and (re.compile('[~a-zあ-んア-ン]').fullmatch(word.surface)):
+                continue
+            # ストップワードを除外
             if word.base_form in stop_words:
                 continue
             hinshi_split = word.part_of_speech.split(',')
@@ -56,6 +60,7 @@ def get_words(titles, stop_words):
                 word_list_per_title += [word.base_form] * WEIGHTS_HINSHI_DICT[hinshi_taple]
             else:
                 word_list_per_title.append(word.base_form)
+        # 要素が0のtitleを除外
         if len(word_list_per_title) > 0:
             title_list.append(word_list_per_title)
     return title_list
@@ -160,6 +165,7 @@ def main():
     # SlothLibのストップワードを取得
     url = 'http://svn.sourceforge.jp/svnroot/slothlib/CSharp/Version1/SlothLib/NLP/Filter/StopWord/word/Japanese.txt'
     stop_words = requests.get(url).text.split('\r\n')
+    stop_words = stop_words + STOP_WORDS_ADDITIONAL
     # ニュース欄のタイトルを取得
     title_sentence_list = []
     for kyoku in KYOKU_SEP_DICT.keys():
