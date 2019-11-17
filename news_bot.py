@@ -94,7 +94,7 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
     # TODO: 適切なトピック数を取得して設定する
     if LOG_LEVEL == 'DEBUG':
         random_state = 123
-    model = LdaModel(bow, id2word=dic, num_topics=5, random_state=random_state)
+    model = LdaModel(bow, id2word=dic, num_topics=TOPIC_NUM, random_state=random_state)
     # 各タイトルを分類
     topic_id_list = []
     for idx, title in enumerate(title_list):
@@ -188,7 +188,7 @@ def main():
     title_sentence_list = list(set(title_sentence_list))
     # タイトルごとの単語リスト取得
     title_list = get_words(title_sentence_list, stop_words)
-    if len(title_list) < 0:
+    if len(title_list) == 0:
         logger.warn('Interrupt news_bot_main.: No TV title data in target periods.')
         sys.exit(-1)
     # 最頻出の話題の重要な単語を取得
