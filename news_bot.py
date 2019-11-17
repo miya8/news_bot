@@ -80,12 +80,6 @@ def get_words_list_per_title(kyoku, min_date_str):
         logger.info('reading ' + file_path)
         with open(file_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-            lines_set = set(lines)
-            # 完全重複する文章は、番組内容が未定の段階で使われる仮文章であるため削除する
-            for line, cnt in Counter(lines).items():
-                if cnt > 1:
-                    lines_set.remove(line)
-            lines = list(lines_set)
             # 1行に複数のタイトルが含まれる。局ごとに異なる区切り文字で分割する。
             for line in lines:
                 title_list = title_list + re.split(KYOKU_SEP_DICT[kyoku], line)
@@ -190,6 +184,8 @@ def main():
     title_sentence_list = []
     for kyoku in KYOKU_SEP_DICT.keys():
         title_sentence_list += get_words_list_per_title(kyoku, min_date)
+    # 完全重複する文章を削除（当日の番組表のみ取得できない局は複数ファイルに同じ番組情報が記載されるため）
+    title_sentence_list = list(set(title_sentence_list))
     # タイトルごとの単語リスト取得
     title_list = get_words(title_sentence_list, stop_words)
     if len(title_list) < 0:
