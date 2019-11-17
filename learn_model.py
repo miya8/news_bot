@@ -6,19 +6,16 @@ import urllib
 from collections import Counter
 from datetime import datetime, timedelta
 from logging import StreamHandler, getLogger
-from pprint import pprint
+#from pprint import pprint
 
-import feedparser
+#import feedparser
 import requests
 from gensim.corpora import Dictionary
 from gensim.models.ldamodel import LdaModel
 from janome.analyzer import Analyzer, Tokenizer
 from janome.charfilter import RegexReplaceCharFilter, UnicodeNormalizeCharFilter
 from janome.tokenfilter import LowerCaseFilter, POSKeepFilter, POSStopFilter
-import pandas as pd
-import numpy as np
 
-import linebot
 from settings_newsbot import *
 
 
@@ -72,7 +69,6 @@ def get_words_list_per_title(kyoku, min_date_str):
     title_list = []
     # ニュース内容のファイル（局ごと）を取得
     file_name = TARGET_FILE_BASE_NAME.format(kyoku, '*')
-    #file_name = TARGET_FILE_BASE_NAME.format(kyoku, '20191112')
     file_path_list = glob.glob(TARGET_DIR + os.sep + file_name)
     for file_path in file_path_list:
         if int(file_path.split('.')[-2][-8:]) < int(min_date_str):
@@ -86,97 +82,22 @@ def get_words_list_per_title(kyoku, min_date_str):
     return title_list
 
 
-def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
-    '''最頻出の話題の単語num個のセットを取得する'''
+def learn_model(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
+    '''LDAモデルを学習して保存する'''
 
     dic = Dictionary(title_list)
     bow = [dic.doc2bow(title) for title in title_list]
     # TODO: 適切なトピック数を取得して設定する
     if LOG_LEVEL == 'DEBUG':
         random_state = 123
-    model = LdaModel.load('test\\lda_topics{}'.format(TOPIC_NUM))
-    model.update(bow)
+    model = LdaModel(bow, id2word=dic, num_topics=TOPIC_NUM, random_state=random_state)
     model.save('test\\lda_topics{}'.format(TOPIC_NUM))
-    # 各タイトルを分類
-    topic_id_list = []
-    for idx, title in enumerate(title_list):
-        logger.debug('title')
-        logger.debug(title)
-        doc_topics_tuple = model.get_document_topics(dic.doc2bow(title), minimum_probability=0.0)
-        doc_topic_dist = [[val[0], val[1]] for val in doc_topics_tuple]
-        doc_topic_dist = np.array(doc_topic_dist)
-        if idx == 0:
-            topic_dist_arr = doc_topic_dist
-        else:
-            topic_dist_arr = np.vstack([topic_dist_arr, doc_topic_dist])
-        topic_id = int(sorted(doc_topic_dist, key=lambda x: x[1], reverse=True)[0][0])
-        topic_id_list.append(topic_id)
-    if LOG_LEVEL == 'DEBUG':
-        # titleごとのトピック分布
-        df_topic_dist = pd.DataFrame({
-            'title': title_list,
-            'topic_id' :topic_id_list
-        })
-        # トピックごとの単語分布
-        cols = ['{}_{}'.format(word_no, elem) \
-                for word_no in range(10) \
-                    for elem in range(2)]
-        print('cols: ', cols)
-        df_word_dist = pd.DataFrame()
-        arr_dist = topic_dist_arr.reshape(-1, model.get_topics().shape[0], 2)
-        for topic_id in range(model.get_topics().shape[0]):
-            df_topic_dist['topic_{}'.format(topic_id)] = arr_dist[:, topic_id, 1]
-            topic_terms = model.get_topic_terms(topic_id, topn=int(len(cols)/2))
-            topic_terms_2 = []
-            for term in topic_terms:
-                topic_terms_2 = topic_terms_2 + [model.id2word[term[0]], term[1]]
-            df_word_dist = df_word_dist.append(
-                pd.Series(topic_terms_2, name='topic_{}'.format(topic_id))
-            )
-        df_topic_dist.to_csv(
-            os.path.join('test', 'classified_topic_{}.csv' \
-                .format(datetime.today().strftime(format='%Y%m%d'))),
-            index=False,
-            encoding='cp932'
-        )
-        df_word_dist.columns = cols
-        df_word_dist.to_csv(
-            os.path.join('test', 'word_distribution_per_topic_{}.csv' \
-                .format(datetime.today().strftime(format='%Y%m%d'))),
-            encoding='cp932'
-        )
-    # 最頻出の話題を取得
-    topic_id_counter = Counter(topic_id_list)
-    most_common_topic_id = topic_id_counter.most_common(1)[0][0]
-    topic_terms = model.get_topic_terms(most_common_topic_id)
-    logger.debug('')
-    logger.debug('topic_id_counter: ' + str(topic_id_counter))
-    logger.debug('most_common_topic_id: ' + str(most_common_topic_id))
-    logger.debug(topic_terms)
-    # 最頻出の話題の重要な単語num個を取得
-    important_word_list = [model.id2word[topic_tuple[0]]
-                           for topic_tuple in topic_terms[:num]]
-    logger.debug(important_word_list)
-    return important_word_list
-
-
-def scrape_googlenews(words_list, num=SCRAPE_NEWS_NUM):
-    '''ニュースサイトから、単語リストにマッチする最新記事のリンクを返す'''
-
-    keyword = '+'.join(words_list)
-    keyword_encoded = urllib.parse.quote(keyword)
-    url = 'http://news.google.com/news?hl=ja&ned=ja&ie=UTF-8&oe=UTF-8&output=rss&q=' + keyword_encoded
-    title_url_list = []
-    for entry in feedparser.parse(url).entries[:num]:
-        title_url_list.append((entry.title, entry.link))
-    logger.debug(title_url_list)
-    return title_url_list
 
 
 def main():
 
     # 読み込み対象とする最小日付
-    min_date = (datetime.today() - timedelta(days=TARGET_ESTIMATE_DAYS)
+    min_date = (datetime.today() - timedelta(days=TARGET_LEARN_DAYS)
                 ).strftime(format='%Y%m%d')
     # SlothLibのストップワードを取得
     url = 'http://svn.sourceforge.jp/svnroot/slothlib/CSharp/Version1/SlothLib/NLP/Filter/StopWord/word/Japanese.txt'
@@ -193,12 +114,8 @@ def main():
     if len(title_list) == 0:
         logger.warning('Interrupt news_bot_main.: No TV title data in target periods.')
         sys.exit(-1)
-    # 最頻出の話題の重要な単語を取得
-    common_topic_word_list = get_most_common(title_list)
-    # 該当する単語でgoogleニュースを検索
-    title_url_list = scrape_googlenews(common_topic_word_list)
-    # Linebotする
-    linebot.bot_to_line(title_url_list)
+    # LDAモデルの学習と保存
+    learn_model(title_list)
 
 
 if __name__ == '__main__':
