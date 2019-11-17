@@ -116,17 +116,37 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
         topic_id = int(sorted(doc_topic_dist, key=lambda x: x[1], reverse=True)[0][0])
         topic_id_list.append(topic_id)
     if LOG_LEVEL == 'DEBUG':
-        df_dist = pd.DataFrame({
+        # titleごとのトピック分布
+        df_topic_dist = pd.DataFrame({
             'title': title_list,
             'topic_id' :topic_id_list
         })
+        # トピックごとの単語分布
+        cols = ['{}_{}'.format(word_no, elem) \
+                for word_no in range(10) \
+                    for elem in range(2)]
+        print('cols: ', cols)
+        df_word_dist = pd.DataFrame()
         arr_dist = topic_dist_arr.reshape(-1, model.get_topics().shape[0], 2)
         for topic_id in range(model.get_topics().shape[0]):
-            df_dist['topic_{}'.format(topic_id)] = arr_dist[:, topic_id, 1]
-        df_dist.to_csv(
+            df_topic_dist['topic_{}'.format(topic_id)] = arr_dist[:, topic_id, 1]
+            topic_terms = model.get_topic_terms(topic_id, topn=int(len(cols)/2))
+            topic_terms_2 = []
+            for term in topic_terms:
+                topic_terms_2 = topic_terms_2 + [dic.id2token[term[0]], term[1]]
+            df_word_dist = df_word_dist.append(
+                pd.Series(topic_terms_2, name='topic_{}'.format(topic_id))
+            )
+        df_topic_dist.to_csv(
             os.path.join('test', 'classified_topic_{}.csv' \
                 .format(datetime.today().strftime(format='%Y%m%d'))),
             index=False,
+            encoding='cp932'
+        )
+        df_word_dist.columns = cols
+        df_word_dist.to_csv(
+            os.path.join('test', 'word_distribution_per_topic_{}.csv' \
+                .format(datetime.today().strftime(format='%Y%m%d'))),
             encoding='cp932'
         )
     # 最頻出の話題を取得
