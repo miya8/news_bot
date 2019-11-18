@@ -189,7 +189,7 @@ def main():
     # タイトルごとの単語リスト取得
     title_list = get_words(title_sentence_list, stop_words)
     if len(title_list) == 0:
-        logger.warn('Interrupt news_bot_main.: No TV title data in target periods.')
+        logger.warning('Interrupt news_bot_main.: No TV title data in target periods.')
         sys.exit(-1)
     # 最頻出の話題の重要な単語を取得
     common_topic_word_list = get_most_common(title_list)
