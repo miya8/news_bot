@@ -32,7 +32,7 @@ def get_words(titles, stop_words):
     '''titlesを形態素解析し、下処理を適用した単語リストを作成する'''
 
     char_filters = [UnicodeNormalizeCharFilter(),
-                    RegexReplaceCharFilter(r'text|[ -/:-@\[-~]', '')]
+                    RegexReplaceCharFilter(r'text|[ -/:-@0-9\[-~]', '')]
     token_filters = [POSKeepFilter(KEEP_FILTER),
                      POSStopFilter(STOP_FILTER),
                      LowerCaseFilter()]

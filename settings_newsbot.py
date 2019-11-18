@@ -15,7 +15,7 @@ TARGET_DAYS = 1
 
 # テレビ局毎の話題区切り文字
 KYOKU_SEP_DICT = {
-    'tbs': '▽|▼',
+    'tbs': '▽|▼|◆',
     'nhk': '▽|▼|　【',
     'ntv': '▽|▼|※',
     'fuji': '▽|▼',
@@ -23,10 +23,10 @@ KYOKU_SEP_DICT = {
 }
 
 # 抽出する品詞
-KEEP_FILTER = ['名詞', '動詞', '形容詞']
-STOP_FILTER = ['名詞,数']
+KEEP_FILTER = ['名詞', '形容詞']
+STOP_FILTER = ['名詞,数', '名詞,副詞可能', '名詞,代名詞']
 # ストップワード（SlothLibのストップワード以外）
-STOP_WORDS_ADDITIONAL = ['する', 'いる', 'ある']
+STOP_WORDS_ADDITIONAL = ['ない']
 
 # 品詞細分類1に対する重み（整数。重みw倍して出現数カウントする。重み0→除去）
 #WEIGHTS_HINSHI_DICT = {('名詞', '固有名詞'): 2}
