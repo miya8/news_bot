@@ -72,7 +72,6 @@ def get_words_list_per_title(kyoku, min_date_str):
     title_list = []
     # ニュース内容のファイル（局ごと）を取得
     file_name = TARGET_FILE_BASE_NAME.format(kyoku, '*')
-    #file_name = TARGET_FILE_BASE_NAME.format(kyoku, '20191112')
     file_path_list = glob.glob(TARGET_DIR + os.sep + file_name)
     for file_path in file_path_list:
         if int(file_path.split('.')[-2][-8:]) < int(min_date_str):
@@ -85,76 +84,70 @@ def get_words_list_per_title(kyoku, min_date_str):
                 title_list = title_list + re.split(KYOKU_SEP_DICT[kyoku], line)
     return title_list
 
+def get_cooccurrence_words(titles, freq_word_id_list, dic):
+    '''
+    most_freq_word_list の単語セットと共起する単語と共起したドキュメント数を取得する。
+    共起する単語とは、対象の単語セットを含むtitle内の他の単語を指す。
+    '''
+
+    co_word_list = []
+    for title in titles:
+        word_ids_in_doc = [word[0] for word in dic.doc2bow(title)]
+        if set(freq_word_id_list) <= set(word_ids_in_doc):
+            word_ids = list(set(word_ids_in_doc) - set(freq_word_id_list))
+            co_word_list = co_word_list + word_ids
+    if len(co_word_list) > 0:
+        return Counter(co_word_list)
+    else:
+        return None
+
+def decide_cooccurrence_word_most(word_id_list, dfs):
+    '''
+    word_id_listの中でdfs(その単語を含むドキュメント数)が最大の単語を取得する
+    最大となる単語が複数ある場合は先に出現した単語を採用する
+    '''
+
+    if len(word_id_list) == 1:
+        return word_id_list[0]
+    else:
+        logger.debug('multiple most frequent words found.')
+        dfs_max_word_id = None
+        for word_id in word_id_list:
+            if dfs_max_word_id == None:
+                dfs_max_word_id = word_id
+            elif dfs[word_id] > dfs[dfs_max_word_id]:
+                dfs_max_word_id = word_id
+        return dfs_max_word_id
 
 def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
     '''最頻出の話題の単語num個のセットを取得する'''
 
     dic = Dictionary(title_list)
-    bow = [dic.doc2bow(title) for title in title_list]
-    # TODO: 適切なトピック数を取得して設定する
-    if LOG_LEVEL == 'DEBUG':
-        random_state = 123
-    model = LdaModel(bow, id2word=dic, num_topics=TOPIC_NUM, random_state=random_state)
-    # 各タイトルを分類
-    topic_id_list = []
-    for idx, title in enumerate(title_list):
-        logger.debug('title')
-        logger.debug(title)
-        doc_topics_tuple = model.get_document_topics(dic.doc2bow(title), minimum_probability=0.0)
-        doc_topic_dist = [[val[0], val[1]] for val in doc_topics_tuple]
-        doc_topic_dist = np.array(doc_topic_dist)
-        if idx == 0:
-            topic_dist_arr = doc_topic_dist
+    freq_word_id_dict = dic.dfs
+    # 1つ目の重要単語を取得
+    most_freq_word_id = sorted(freq_word_id_dict.items(), key=lambda x: x[1], reverse=True)[0][0]
+    most_freq_word = dic[most_freq_word_id]
+    logger.debug('most_freq_word: {}'.format(most_freq_word))
+    # 2つ目以降の重要単語を取得
+    important_word_id_list = [most_freq_word_id]
+    for important_word_no in range(1, num):
+        logger.debug('seeking no.{} freq word...'.format(important_word_no))
+        co_word_cnt_dict =  get_cooccurrence_words(title_list, important_word_id_list, dic)
+        if co_word_cnt_dict is None:
+            break
         else:
-            topic_dist_arr = np.vstack([topic_dist_arr, doc_topic_dist])
-        topic_id = int(sorted(doc_topic_dist, key=lambda x: x[1], reverse=True)[0][0])
-        topic_id_list.append(topic_id)
-    if LOG_LEVEL == 'DEBUG':
-        # titleごとのトピック分布
-        df_topic_dist = pd.DataFrame({
-            'title': title_list,
-            'topic_id' :topic_id_list
-        })
-        # トピックごとの単語分布
-        cols = ['{}_{}'.format(word_no, elem) \
-                for word_no in range(10) \
-                    for elem in range(2)]
-        print('cols: ', cols)
-        df_word_dist = pd.DataFrame()
-        arr_dist = topic_dist_arr.reshape(-1, model.get_topics().shape[0], 2)
-        for topic_id in range(model.get_topics().shape[0]):
-            df_topic_dist['topic_{}'.format(topic_id)] = arr_dist[:, topic_id, 1]
-            topic_terms = model.get_topic_terms(topic_id, topn=int(len(cols)/2))
-            topic_terms_2 = []
-            for term in topic_terms:
-                topic_terms_2 = topic_terms_2 + [dic.id2token[term[0]], term[1]]
-            df_word_dist = df_word_dist.append(
-                pd.Series(topic_terms_2, name='topic_{}'.format(topic_id))
-            )
-        df_topic_dist.to_csv(
-            os.path.join('test', 'classified_topic_{}.csv' \
-                .format(datetime.today().strftime(format='%Y%m%d'))),
-            index=False,
-            encoding='cp932'
-        )
-        df_word_dist.columns = cols
-        df_word_dist.to_csv(
-            os.path.join('test', 'word_distribution_per_topic_{}.csv' \
-                .format(datetime.today().strftime(format='%Y%m%d'))),
-            encoding='cp932'
-        )
-    # 最頻出の話題を取得
-    topic_id_counter = Counter(topic_id_list)
-    most_common_topic_id = topic_id_counter.most_common(1)[0][0]
-    topic_terms = model.get_topic_terms(most_common_topic_id)
-    logger.debug('')
-    logger.debug('topic_id_counter: ' + str(topic_id_counter))
-    logger.debug('most_common_topic_id: ' + str(most_common_topic_id))
-    logger.debug(topic_terms)
-    # 最頻出の話題の重要な単語num個を取得
-    important_word_list = [dic.id2token[topic_tuple[0]]
-                           for topic_tuple in topic_terms[:num]]
-    logger.debug(important_word_list)
+            logger.debug('co_word_cnt_dict(~5): {}'.format(co_word_cnt_dict.most_common(5)))
+            co_most_num = co_word_cnt_dict.most_common(1)[0][1]
+            logger.debug('co_most_num: {}'.format(co_most_num))
+            # 最多単語が複数ある場合、dfs(その単語を含むドキュメント数)の大きい単語を採用する
+            # 更にdfsも同値だった場合は先に出現した単語を採用とする
+            co_most_word_id_list = \
+                [word_id for word_id, cnt in co_word_cnt_dict.items()  if cnt == co_most_num]
+            co_most_word_id = \
+                decide_cooccurrence_word_most(co_most_word_id_list, freq_word_id_dict)
+            important_word_id_list.append(co_most_word_id)
+    important_word_list = [dic[word_id] for word_id in important_word_id_list]
+    logger.debug('important_word_list: {}'.format(important_word_list))
     return important_word_list
 
 

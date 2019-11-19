@@ -7,11 +7,8 @@ LOGGER_NAME = 'news_bot'
 TARGET_DIR = 'news'
 TARGET_FILE_BASE_NAME = '{}_news_{}.csv'
 
-# LDAモデルに指定するトピック数
-TOPIC_NUM = 10
-
 # 何日分のニュースファイルを対象とするか
-TARGET_DAYS = 1
+TARGET_DAYS = 0
 
 # テレビ局毎の話題区切り文字
 KYOKU_SEP_DICT = {
