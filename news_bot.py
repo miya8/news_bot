@@ -158,15 +158,18 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
     return important_word_list
 
 
-def scrape_googlenews(words_list, num=SCRAPE_NEWS_NUM):
+def get_googlenews(words_list, num=SCRAPE_NEWS_NUM):
     '''ニュースサイトから、単語リストにマッチする最新記事のリンクを返す'''
 
     keyword = '+'.join(words_list)
     keyword_encoded = urllib.parse.quote(keyword)
-    url = 'http://news.google.com/news?hl=ja&ned=ja&ie=UTF-8&oe=UTF-8&output=rss&q=' + keyword_encoded
-    title_url_list = []
-    for entry in feedparser.parse(url).entries[:num]:
-        title_url_list.append((entry.title, entry.link))
+    url = 'http://news.google.com/news?hl=ja&ned=ja&ie=UTF-8&oe=UTF-8&output=rss&q={}' \
+            .format(keyword_encoded)
+    title_url_dict = {}
+    for entry in feedparser.parse(url).entries[:10 if num<=5 else num*2]:
+        title_url_dict[(entry.title, entry.link)] = datetime(*entry.published_parsed[:6])
+    title_url_list = [(key[0], key[1]) \
+        for key, _ in sorted(title_url_dict.items(), key=lambda x: x[1], reverse=True)[:num]]
     logger.debug(title_url_list)
     return title_url_list
 
@@ -194,7 +197,7 @@ def main():
     # 最頻出の話題の重要な単語を取得
     common_topic_word_list = get_most_common(title_list)
     # 該当する単語でgoogleニュースを検索
-    title_url_list = scrape_googlenews(common_topic_word_list)
+    title_url_list = get_googlenews(common_topic_word_list)
     # Linebotする
     linebot.bot_to_line(title_url_list)
 
