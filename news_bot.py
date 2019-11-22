@@ -60,10 +60,17 @@ def get_words(titles, stop_words):
                 word_list_per_title += [word.base_form] * WEIGHTS_HINSHI_DICT[hinshi_taple]
             else:
                 word_list_per_title.append(word.base_form)
+        title_list.append(word_list_per_title)
+    # 全title中で1回しか出現しない単語を削除
+    dic = Dictionary(title_list)
+    valid_word_list = [word_id for word_id, num in dic.dfs.items() if num > 1]
+    title_list_2 = []
+    for title in title_list:
+        word_list_per_title_2 = [word for word in title if dic.token2id[word] in valid_word_list]
         # 要素が0のtitleを除外
-        if len(word_list_per_title) > 0:
-            title_list.append(word_list_per_title)
-    return title_list
+        if len(word_list_per_title_2) > 0:
+            title_list_2.append(word_list_per_title_2)
+    return title_list_2, dic
 
 
 def get_words_list_per_title(kyoku, min_date_str):
@@ -86,10 +93,9 @@ def get_words_list_per_title(kyoku, min_date_str):
     return title_list
 
 
-def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
+def get_most_common(title_list, dic, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
     '''最頻出の話題の単語num個のセットを取得する'''
 
-    dic = Dictionary(title_list)
     bow = [dic.doc2bow(title) for title in title_list]
     # TODO: 適切なトピック数を取得して設定する
     if LOG_LEVEL == 'DEBUG':
@@ -119,7 +125,6 @@ def get_most_common(title_list, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
         cols = ['{}_{}'.format(word_no, elem) \
                 for word_no in range(10) \
                     for elem in range(2)]
-        print('cols: ', cols)
         df_word_dist = pd.DataFrame()
         arr_dist = topic_dist_arr.reshape(-1, model.get_topics().shape[0], 2)
         for topic_id in range(model.get_topics().shape[0]):
@@ -190,16 +195,16 @@ def main():
     # 完全重複する文章を削除（当日の番組表のみ取得できない局は複数ファイルに同じ番組情報が記載されるため）
     title_sentence_list = list(set(title_sentence_list))
     # タイトルごとの単語リスト取得
-    title_list = get_words(title_sentence_list, stop_words)
+    title_list, dic = get_words(title_sentence_list, stop_words)
     if len(title_list) == 0:
         logger.warning('Interrupt news_bot_main.: No TV title data in target periods.')
         sys.exit(-1)
     # 最頻出の話題の重要な単語を取得
-    common_topic_word_list = get_most_common(title_list)
+    common_topic_word_list = get_most_common(title_list, dic)
     # 該当する単語でgoogleニュースを検索
     title_url_list = get_googlenews(common_topic_word_list)
     # Linebotする
-    linebot.bot_to_line(title_url_list)
+    #linebot.bot_to_line(title_url_list)
 
 
 if __name__ == '__main__':
