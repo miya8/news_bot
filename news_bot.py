@@ -11,6 +11,7 @@ from pprint import pprint
 import feedparser
 import requests
 from gensim.corpora import Dictionary
+from gensim.models import KeyedVectors
 from gensim.models.ldamodel import LdaModel
 from janome.analyzer import Analyzer, Tokenizer
 from janome.charfilter import RegexReplaceCharFilter, UnicodeNormalizeCharFilter
@@ -32,7 +33,7 @@ def get_words(titles, stop_words):
     '''titlesを形態素解析し、下処理を適用した単語リストを作成する'''
 
     char_filters = [UnicodeNormalizeCharFilter(),
-                    RegexReplaceCharFilter(r'text|[ -/:-@0-9\[-~]', '')]
+                    RegexReplaceCharFilter(r'text|[ -/:-@!0-9\[-~]', '')]
     token_filters = [POSKeepFilter(KEEP_FILTER),
                      POSStopFilter(STOP_FILTER),
                      LowerCaseFilter()]
@@ -91,6 +92,109 @@ def get_words_list_per_title(kyoku, min_date_str):
             for line in lines:
                 title_list = title_list + re.split(KYOKU_SEP_DICT[kyoku], line)
     return title_list
+
+
+def create_rep_dict_one(dic, similar_list_dict, self_w_id):
+    '''DF値最大の単語に置換する1行辞書を作成する'''
+    
+    rep_dict = {}
+    dfs_max_w_id = self_w_id
+    for w_id in similar_list_dict[self_w_id]:
+        if not w_id in similar_list_dict.keys():
+            continue
+        if dic.dfs[w_id] > dic.dfs[dfs_max_w_id]:
+            dfs_max_w_id = w_id
+    # 自分がDF最大値の場合、他の単語を自分に置換する辞書を作成
+    if dfs_max_w_id == self_w_id:
+        rep_dict = {w_id: self_w_id for w_id in similar_list_dict[self_w_id]}
+    # 他の単語がDF最大値の場合、その単語の類義語リストを辿る
+    else:
+        rep_dict = create_rep_dict_one(dic, similar_list_dict, dfs_max_w_id)
+    return rep_dict
+
+
+def create_rep_dict(dic, vec, rep_dict, similar_list_dict):
+    '''類義語置換辞書を作成する'''
+    
+    # 類義語辞書1セット目を起点としてDF最大値の単語に合わせる置換辞書を作成
+    tmp_rep_dict = create_rep_dict_one(dic, similar_list_dict, list(similar_list_dict.keys())[0])
+    rep_dict.update(tmp_rep_dict)
+    # 全類義語辞書セットを置換辞書の対象外の単語のみ残して更新
+    del_k_list = []
+    for k_w_id, sim_list in similar_list_dict.items():
+        sim_list_new = []
+        if k_w_id in list(tmp_rep_dict.keys()):
+            del_k_list.append(k_w_id)
+            continue
+        for w_id in sim_list:
+            if w_id in list(tmp_rep_dict.keys()):
+                continue
+            else:
+                sim_list_new.append(w_id)
+        sim_list_new = list(set(sim_list_new))
+        similar_list_dict[k_w_id] = sim_list_new
+        if len(sim_list_new) == 0:
+            del_k_list.append(k_w_id)
+    # 置換辞書のキーまたは要素がなくなった類義語辞書セットを削除
+    for k_id in set(del_k_list):
+        del similar_list_dict[k_id]
+    return rep_dict, similar_list_dict
+
+
+def get_replace_dict(dic, threshold=SIMILAR_THRESHOLD):
+    '''dic内の語彙の類似語セットを作成し、類義語置換辞書を作成する'''
+
+    # 学習済の単語分散表現を読込み
+    vec_path = os.path.join(os.environ['WIKI_ENT_VEC_PATH'], 'jawiki.all_vectors.200d.txt')
+    logger.debug('reading jawiki...')
+    vec = KeyedVectors.load_word2vec_format(vec_path, binary=False)
+    logger.debug('finished reading.')
+    # コサイン類似度で類似語セットを作成
+    similar_word_dict = {}
+    ignored_word_list = []
+    for self_id in dic.keys():
+        try:
+            _ = vec.word_vec(dic[self_id])
+        except KeyError:
+            ignored_word_list.append(dic[self_id])
+            continue
+        similar_word_list = []
+        for word_id in dic.keys():
+            try:
+                _ = vec.word_vec(dic[word_id])
+            except KeyError:
+                continue
+            similarity = vec.similarity(dic[self_id], dic[word_id])
+            if similarity >= threshold and word_id != self_id:
+                similar_word_list.append(word_id)
+        if len(similar_word_list) > 0:
+            similar_word_dict[self_id] = similar_word_list
+    if len(ignored_word_list) > 0:
+        logger.warning('Not included in word_vec, ignored.:{}'.format(ignored_word_list))
+    # 類似語セットから類義語置換辞書を作成
+    rep_dict = {}
+    while len(similar_word_dict) > 0:
+        rep_dict, similar_word_dict = create_rep_dict(dic, vec, rep_dict, similar_word_dict)
+    return rep_dict
+
+
+def replace_similar_word(dic, rep_dict, title_list):
+    '''rep_dictに従い類義語を置換する'''
+    
+    title_list2 = []
+    for title in title_list:
+        title2 = []
+        for word in title:
+            rep_flg = False
+            for key, val in rep_dict.items():
+                if word == dic[key]:
+                    title2.append(dic[val])
+                    rep_flg = True
+                    break
+            if rep_flg == False:
+                title2.append(word)
+        title_list2.append(title2)
+    return title_list2
 
 
 def get_most_common(title_list, dic, num=COMMON_TOPIC_WORDS_NUM, random_state=None):
@@ -199,12 +303,15 @@ def main():
     if len(title_list) == 0:
         logger.warning('Interrupt news_bot_main.: No TV title data in target periods.')
         sys.exit(-1)
+    # title_list内の類似語を1単語にまとめる
+    replace_dict = get_replace_dict(dic)
+    title_list2 = replace_similar_word(dic, replace_dict, title_list)
     # 最頻出の話題の重要な単語を取得
-    common_topic_word_list = get_most_common(title_list, dic)
+    common_topic_word_list = get_most_common(title_list2, dic)
     # 該当する単語でgoogleニュースを検索
     title_url_list = get_googlenews(common_topic_word_list)
     # Linebotする
-    #linebot.bot_to_line(title_url_list)
+    linebot.bot_to_line(title_url_list)
 
 
 if __name__ == '__main__':
